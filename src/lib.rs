@@ -10,19 +10,22 @@ use tokio::{
 use tracing::log::{debug, error};
 
 pub async fn get_secret_key(persist_at: Option<PathBuf>) -> SecretKey {
-    let mut persist_at_ref = persist_at.as_ref();
-    match read_key(persist_at_ref).await {
+    get_secret_key_from_ref(persist_at.as_ref()).await
+}
+
+pub async fn get_secret_key_from_ref(mut persist_at: Option<&PathBuf>) -> SecretKey {
+    match read_key(persist_at).await {
         Ok(Some(result)) => return result,
         Ok(None) => (),
         Err(error) => {
             error!("Error reading persisted {persist_at:?} key: [{error:?}]");
-            persist_at_ref = None; // Don't overwrite the key that we couln't read
+            persist_at = None; // Don't overwrite the key that we couln't read
         }
     };
 
     let key = SecretKey::generate(&mut rand::rng());
     debug!("Generate new key: {key:?}");
-    if let Some(node_path) = persist_at_ref {
+    if let Some(node_path) = persist_at {
         if let Err(error) = write_key(&node_path, &key).await {
             error!("Could not persist {persist_at:?} key: {node_path:?}: {error:?}");
         }
@@ -109,8 +112,8 @@ mod tests {
 
     #[tokio::test]
     async fn it_generates_emphemeral_keys() {
-        let first_key = get_secret_key(None).await;
-        let second_key = get_secret_key(None).await;
+        let first_key = get_secret_key_from_ref(None).await;
+        let second_key = get_secret_key_from_ref(None).await;
         assert_ne!(first_key.to_bytes(), second_key.to_bytes());
     }
 
@@ -124,7 +127,10 @@ mod tests {
     #[tokio::test]
     async fn it_reuses_a_key_from_a_given_location() {
         let first_key = get_secret_key(Some("target/test/iroh-secret-foo.pem".into())).await;
-        let second_key = get_secret_key(Some("target/test/iroh-secret-foo.pem".into()).or_else(||default_persist_at("bar"))).await;
+        let second_key = get_secret_key(
+            Some("target/test/iroh-secret-foo.pem".into()).or_else(|| default_persist_at("bar")),
+        )
+        .await;
         let third_key = get_secret_key(Some("target/test/iroh-secret-bar.pem".into())).await;
         assert_eq!(first_key.to_bytes(), second_key.to_bytes());
         assert_ne!(first_key.to_bytes(), third_key.to_bytes());
@@ -133,7 +139,8 @@ mod tests {
     #[tokio::test]
     async fn it_reuses_a_key_from_a_default_location() {
         let first_key = get_secret_key(default_persist_at("foo")).await;
-        let second_key = get_secret_key(None::<PathBuf>.or_else(|| default_persist_at("foo"))).await;
+        let persist_at_foo = None::<PathBuf>.or_else(|| default_persist_at("foo"));
+        let second_key = get_secret_key_from_ref(persist_at_foo.as_ref()).await;
         let third_key = get_secret_key(Some("target/test/iroh-secret-bar.pem".into())).await;
         assert_eq!(first_key.to_bytes(), second_key.to_bytes());
         assert_ne!(first_key.to_bytes(), third_key.to_bytes());
