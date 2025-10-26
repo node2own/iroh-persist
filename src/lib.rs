@@ -1,13 +1,17 @@
 use std::path::{Path, PathBuf};
 
 use iroh::SecretKey;
-use n0_snafu::{Result, format_err};
+use n0_snafu::Result;
 use ssh_key::Algorithm;
 use tokio::{
     fs::{self, OpenOptions},
     io::AsyncWriteExt,
 };
 use tracing::log::{debug, error};
+
+pub mod error;
+
+pub use crate::error::*;
 
 pub async fn get_secret_key(persist_at: Option<PathBuf>) -> SecretKey {
     get_secret_key_from_ref(persist_at.as_ref()).await
@@ -50,20 +54,19 @@ async fn read_key(key_path_option: Option<&PathBuf>) -> Result<Option<SecretKey>
         }
         let keystr = tokio::fs::read_to_string(key_path)
             .await
-            .map_err(|e| format_err!("Read key error: {key_path:?}: {e:?}"))?;
+            .map_err(for_file(key_path.clone()))?;
         let ser_key = ssh_key::private::PrivateKey::from_openssh(keystr)
-            .map_err(|e| format_err!("Parse key error: {key_path:?}: {e:?}"))?;
+            .map_err(PersistError::ssh_parsing_error)?;
         let ssh_key::private::KeypairData::Ed25519(kp) = ser_key.key_data() else {
-            let algorithm = ser_key.key_data().algorithm().ok();
-            let algorithm_name = algorithm
+            let key_algorithm = ser_key.key_data().algorithm().ok();
+            let algorithm = key_algorithm
                 .as_ref()
                 .map(Algorithm::as_str)
                 .map(ToString::to_string);
-            return Err(format_err!(
-                "Invalid key type: {key_path:?}: {algorithm_name:?}"
-            ));
+            return Err(KeyDecodeErrorSource::InvalidKeyType { algorithm }.into());
         };
         let key = SecretKey::from_bytes(&kp.private.to_bytes());
+        debug!("Read key from {key_path:?}");
         Ok(Some(key))
     } else {
         Ok(None)
@@ -77,9 +80,10 @@ async fn write_key(key_path: &Path, secret_key: &SecretKey) -> Result<()> {
     };
     let ser_key = ssh_key::private::PrivateKey::from(ckey)
         .to_openssh(ssh_key::LineEnding::default())
-        .map_err(|e| format_err!("Error serializing SSH key: {e:?}"))?;
+        .map_err(PersistError::ssh_serializing_error)?;
 
     create_secret_file(key_path, ser_key.as_str()).await?;
+    debug!("Wrote key to {key_path:?}");
     Ok(())
 }
 
@@ -88,7 +92,7 @@ async fn create_secret_file(file: &Path, content: &str) -> Result {
     if parent.pop() {
         fs::create_dir_all(parent.clone())
             .await
-            .map_err(|e| format_err!("Error creating directory {parent:?}: {e:?}"))?
+            .map_err(for_file(parent))?
     }
 
     let mut open_options = OpenOptions::new();
@@ -98,11 +102,11 @@ async fn create_secret_file(file: &Path, content: &str) -> Result {
 
     let mut open_file = (open_options.create(true).write(true).open(file))
         .await
-        .map_err(|e| format_err!("Error creating secret-file: {file:?}: {e:?}"))?;
+        .map_err(for_file(file.to_owned()))?;
     open_file
         .write_all(content.as_bytes())
         .await
-        .map_err(|e| format_err!("Error writing secret-file: {file:?}: {e:?}"))?;
+        .map_err(for_file(file.to_owned()))?;
     Ok(())
 }
 
@@ -110,7 +114,32 @@ async fn create_secret_file(file: &Path, content: &str) -> Result {
 mod tests {
     use super::*;
 
+    struct TestTmpDir {
+        dir: PathBuf,
+        dir_str: String,
+    }
+
+    impl TestTmpDir {
+        async fn create() -> Self {
+            let id: u32 = rand::random();
+            let dir_str = format!("target/test-{id:x}");
+            let dir: PathBuf = (&dir_str).into();
+            tokio::fs::create_dir_all(&dir).await.unwrap();
+            TestTmpDir { dir, dir_str }
+        }
+        fn dir_str(&self) -> &str {
+            &self.dir_str
+        }
+    }
+
+    impl Drop for TestTmpDir {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.dir).unwrap();
+        }
+    }
+
     #[tokio::test]
+    #[test_log::test]
     async fn it_generates_emphemeral_keys() {
         let first_key = get_secret_key_from_ref(None).await;
         let second_key = get_secret_key_from_ref(None).await;
@@ -118,33 +147,44 @@ mod tests {
     }
 
     #[tokio::test]
+    #[test_log::test]
     async fn it_stores_different_keys() {
-        let first_key = get_secret_key(Some("target/test/iroh-secret-foo.pem".into())).await;
-        let second_key = get_secret_key(Some("target/test/iroh-secret-bar.pem".into())).await;
+        let test_tmp_dir = TestTmpDir::create().await;
+        let tmp_dir = test_tmp_dir.dir_str();
+        let first_key = get_secret_key(Some(format!("{tmp_dir}/iroh-secret-foo.pem").into())).await;
+        let second_key =
+            get_secret_key(Some(format!("{tmp_dir}/test/iroh-secret-bar.pem").into())).await;
         assert_ne!(first_key.to_bytes(), second_key.to_bytes());
     }
 
     #[tokio::test]
+    #[test_log::test]
     async fn it_reuses_a_key_from_a_given_location() {
-        let first_key = get_secret_key(Some("target/test/iroh-secret-foo.pem".into())).await;
-        let second_key = get_secret_key(
-            Some("target/test/iroh-secret-foo.pem".into()).or_else(|| default_persist_at("bar")),
-        )
-        .await;
-        let third_key = get_secret_key(Some("target/test/iroh-secret-bar.pem".into())).await;
+        let test_tmp_dir = TestTmpDir::create().await;
+        let tmp_dir = test_tmp_dir.dir_str();
+        let first_key =
+            get_secret_key(Some(format!("{tmp_dir}/test/iroh-secret-foo.pem").into())).await;
+        let second_location = Some(format!("{tmp_dir}/test/iroh-secret-foo.pem").into())
+            .or_else(|| default_persist_at("bar"));
+        debug!("Second location: {second_location:?}");
+        let second_key = get_secret_key(second_location).await;
+        let third_key =
+            get_secret_key(Some(format!("{tmp_dir}/test/iroh-secret-bar.pem").into())).await;
         assert_eq!(first_key.to_bytes(), second_key.to_bytes());
         assert_ne!(first_key.to_bytes(), third_key.to_bytes());
     }
 
     #[tokio::test]
+    #[test_log::test]
     async fn it_reuses_a_key_from_a_default_location() {
+        let test_tmp_dir = TestTmpDir::create().await;
+        let tmp_dir = test_tmp_dir.dir_str();
         let first_key = get_secret_key(default_persist_at("foo")).await;
         let persist_at_foo = None::<PathBuf>.or_else(|| default_persist_at("foo"));
         let second_key = get_secret_key_from_ref(persist_at_foo.as_ref()).await;
-        let third_key = get_secret_key(Some("target/test/iroh-secret-bar.pem".into())).await;
+        let third_key =
+            get_secret_key(Some(format!("{tmp_dir}/test/iroh-secret-bar.pem").into())).await;
         assert_eq!(first_key.to_bytes(), second_key.to_bytes());
         assert_ne!(first_key.to_bytes(), third_key.to_bytes());
     }
-
-    // TODO: add more tests
 }
