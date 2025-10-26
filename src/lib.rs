@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+};
 
 use iroh::SecretKey;
 use n0_snafu::Result;
@@ -14,11 +17,16 @@ pub mod error;
 pub use crate::error::*;
 
 pub async fn get_secret_key(persist_at: PathBuf) -> SecretKey {
-    get_secret_key_from_option_ref(Some(&persist_at)).await
+    get_secret_key_from_ref(&persist_at).await
 }
 
 pub async fn get_secret_key_from_ref(persist_at: &PathBuf) -> SecretKey {
-    get_secret_key_from_option_ref(Some(persist_at)).await
+    let key_option = match try_get_secret_key_from_ref(persist_at).await {
+        Ok(secret_key) => return secret_key,
+        Err(error) => handle_error(error, persist_at),
+    };
+    warn!("Falling back to ephemeral key");
+    key_option.unwrap_or_else(generate_key)
 }
 
 pub async fn get_secret_key_from_option(persist_at: Option<PathBuf>) -> SecretKey {
@@ -28,25 +36,27 @@ pub async fn get_secret_key_from_option(persist_at: Option<PathBuf>) -> SecretKe
 pub async fn get_secret_key_from_option_ref(persist_at: Option<&PathBuf>) -> SecretKey {
     let key_option = match try_get_secret_key_from_option_ref(persist_at).await {
         Ok(secret_key) => return secret_key,
-        Err(PersistError::KeyReadError { source }) => {
-            error!("Error reading persisted {persist_at:?} key: [{source:?}]");
-            None
-        }
-        Err(PersistError::KeyWriteError { source, key }) => {
-            error!("Error writing persisted {persist_at:?} key: [{source:?}]");
-            Some(key)
-        }
+        Err(error) => handle_error(error, &persist_at),
     };
     warn!("Falling back to ephemeral key");
     key_option.unwrap_or_else(generate_key)
 }
 
-pub async fn try_get_secret_key(persist_at: PathBuf) -> Result<SecretKey, PersistError> {
-    try_get_secret_key_from_option_ref(Some(&persist_at)).await
+fn handle_error<P: Debug>(error: PersistError, persist_at: &P) -> Option<SecretKey> {
+    match error {
+        PersistError::KeyReadError { source } => {
+            error!("Error reading persisted {persist_at:?} key: [{source:?}]");
+            None
+        }
+        PersistError::KeyWriteError { source, key } => {
+            error!("Error writing persisted {persist_at:?} key: [{source:?}]");
+            Some(key)
+        }
+    }
 }
 
-pub async fn try_get_secret_key_from_ref(persist_at: &PathBuf) -> Result<SecretKey, PersistError> {
-    try_get_secret_key_from_option_ref(Some(persist_at)).await
+pub async fn try_get_secret_key(persist_at: PathBuf) -> Result<SecretKey, PersistError> {
+    try_get_secret_key_from_option_ref(Some(&persist_at)).await
 }
 
 pub async fn try_get_secret_key_from_option(
@@ -59,17 +69,21 @@ pub async fn try_get_secret_key_from_option_ref(
     persist_at: Option<&PathBuf>,
 ) -> Result<SecretKey, PersistError> {
     if let Some(node_path) = persist_at {
-        if let Some(result) = read_key(node_path).await? {
-            return Ok(result);
-        };
-
-        let key = generate_key();
-        write_key(&node_path, &key).await?;
-        Ok(key)
+        try_get_secret_key_from_ref(node_path).await
     } else {
         warn!("No key path; falling back to ephemeral key");
         Ok(generate_key())
     }
+}
+
+pub async fn try_get_secret_key_from_ref(persist_at: &PathBuf) -> Result<SecretKey, PersistError> {
+    if let Some(result) = read_key(persist_at).await? {
+        return Ok(result);
+    };
+
+    let key = generate_key();
+    write_key(persist_at, &key).await?;
+    Ok(key)
 }
 
 pub fn generate_key() -> SecretKey {
