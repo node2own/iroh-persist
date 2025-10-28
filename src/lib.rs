@@ -153,7 +153,7 @@ async fn read_key(key_path: &PathBuf) -> Result<Option<SecretKey>, PersistError>
         return Err(KeyReadErrorSource::InvalidKeyTypeError { algorithm }.into());
     };
     let key = SecretKey::from_bytes(&kp.private.to_bytes());
-    debug!("Read key from {key_path:?}");
+    info!("Read key from {key_path:?}");
     Ok(Some(key))
 }
 
