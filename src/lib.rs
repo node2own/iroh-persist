@@ -1,32 +1,66 @@
 use std::{
+    borrow::Cow,
     fmt::Debug,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
-use iroh::SecretKey;
+use iroh::{KeyParsingError, SecretKey};
 use n0_snafu::Result;
 use ssh_key::Algorithm;
 use tokio::{
     fs::{self, OpenOptions},
     io::AsyncWriteExt,
 };
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 pub mod error;
 
 pub use crate::error::*;
+
+pub async fn get_secret_key_magic(
+    persist: bool,
+    app_name: Cow<'_, str>,
+    persist_at: Option<&PathBuf>,
+) -> SecretKey {
+    if persist || persist_at.is_some() {
+        let persist_location = persist_at
+            .map(PathBuf::to_owned)
+            .or_else(|| default_persist_at(app_name));
+        return get_secret_key_from_option(persist_location).await;
+    }
+    if let Some(secret_key) = get_secret_key_from_env() {
+        info!("Using ephemeral secret key from environment");
+        return secret_key;
+    }
+    generate_key()
+}
+
+pub fn get_secret_key_from_env() -> Option<SecretKey> {
+    match try_get_secret_key_from_env() {
+        Ok(result) => result,
+        Err(_) => None,
+    }
+}
+
+pub fn try_get_secret_key_from_env() -> Result<Option<SecretKey>, PersistError> {
+    if let Ok(hex_secret) = std::env::var("IROH_SECRET") {
+        return iroh::SecretKey::from_str(&hex_secret)
+            .map(Option::Some)
+            .map_err(KeyParsingError::into);
+    }
+    Ok(None)
+}
 
 pub async fn get_secret_key(persist_at: PathBuf) -> SecretKey {
     get_secret_key_from_ref(&persist_at).await
 }
 
 pub async fn get_secret_key_from_ref(persist_at: &PathBuf) -> SecretKey {
-    let key_option = match try_get_secret_key_from_ref(persist_at).await {
-        Ok(secret_key) => return secret_key,
+    match try_get_secret_key_from_ref(persist_at).await {
+        Ok(secret_key) => secret_key,
         Err(error) => handle_error(error, persist_at),
-    };
-    warn!("Falling back to ephemeral key");
-    key_option.unwrap_or_else(generate_key)
+    }
 }
 
 pub async fn get_secret_key_from_option(persist_at: Option<PathBuf>) -> SecretKey {
@@ -34,25 +68,25 @@ pub async fn get_secret_key_from_option(persist_at: Option<PathBuf>) -> SecretKe
 }
 
 pub async fn get_secret_key_from_option_ref(persist_at: Option<&PathBuf>) -> SecretKey {
-    let key_option = match try_get_secret_key_from_option_ref(persist_at).await {
-        Ok(secret_key) => return secret_key,
+    match try_get_secret_key_from_option_ref(persist_at).await {
+        Ok(secret_key) => secret_key,
         Err(error) => handle_error(error, &persist_at),
-    };
-    warn!("Falling back to ephemeral key");
-    key_option.unwrap_or_else(generate_key)
+    }
 }
 
-fn handle_error<P: Debug>(error: PersistError, persist_at: &P) -> Option<SecretKey> {
-    match error {
+fn handle_error<P: Debug>(error: PersistError, persist_at: &P) -> SecretKey {
+    let secret_key = match error {
         PersistError::KeyReadError { source } => {
             error!("Error reading persisted {persist_at:?} key: [{source:?}]");
-            None
+            generate_key()
         }
         PersistError::KeyWriteError { source, key } => {
             error!("Error writing persisted {persist_at:?} key: [{source:?}]");
-            Some(key)
+            key
         }
-    }
+    };
+    warn!("Falling back to ephemeral key");
+    secret_key
 }
 
 pub async fn try_get_secret_key(persist_at: PathBuf) -> Result<SecretKey, PersistError> {
@@ -78,8 +112,13 @@ pub async fn try_get_secret_key_from_option_ref(
 
 pub async fn try_get_secret_key_from_ref(persist_at: &PathBuf) -> Result<SecretKey, PersistError> {
     if let Some(result) = read_key(persist_at).await? {
+        info!("Using secret key {persist_at:?}");
         return Ok(result);
     };
+    if let Some(result) = try_get_secret_key_from_env()? {
+        info!("Using secret key from environment");
+        return Ok(result);
+    }
 
     let key = generate_key();
     write_key(persist_at, &key).await?;
@@ -88,7 +127,7 @@ pub async fn try_get_secret_key_from_ref(persist_at: &PathBuf) -> Result<SecretK
 
 pub fn generate_key() -> SecretKey {
     let result = SecretKey::generate(&mut rand::rng());
-    debug!("Generated new key");
+    info!("Generated new key");
     result
 }
 
@@ -138,7 +177,7 @@ async fn write_key(key_path: &Path, secret_key: &SecretKey) -> Result<(), Persis
     create_secret_file(key_path, ser_key.as_str())
         .await
         .map_err(with_key(secret_key))?;
-    debug!("Wrote key to {key_path:?}");
+    info!("Wrote key to {key_path:?}");
     Ok(())
 }
 
