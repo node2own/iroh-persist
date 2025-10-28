@@ -82,10 +82,6 @@ fn handle_error<P: Debug>(error: PersistError, persist_at: &P) -> SecretKey {
     secret_key
 }
 
-pub async fn try_get_secret_key(persist_at: PathBuf) -> Result<SecretKey, PersistError> {
-    try_get_secret_key_from_option_ref(Some(&persist_at)).await
-}
-
 pub async fn try_get_secret_key_from_option(
     persist_at: Option<PathBuf>,
 ) -> Result<SecretKey, PersistError> {
@@ -101,6 +97,10 @@ pub async fn try_get_secret_key_from_option_ref(
         warn!("No key path; falling back to ephemeral key");
         Ok(generate_key())
     }
+}
+
+pub async fn try_get_secret_key(persist_at: PathBuf) -> Result<SecretKey, PersistError> {
+    try_get_secret_key_from_ref(&persist_at).await
 }
 
 pub async fn try_get_secret_key_from_ref(persist_at: &PathBuf) -> Result<SecretKey, PersistError> {
