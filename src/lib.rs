@@ -29,18 +29,11 @@ pub async fn get_secret_key_magic(
             .or_else(|| default_persist_at(app_name));
         return get_secret_key_from_option(persist_location).await;
     }
-    if let Some(secret_key) = get_secret_key_from_env() {
+    if let Some(secret_key) = try_get_secret_key_from_env().ok().flatten() {
         info!("Using ephemeral secret key from environment");
         return secret_key;
     }
     generate_key()
-}
-
-pub fn get_secret_key_from_env() -> Option<SecretKey> {
-    match try_get_secret_key_from_env() {
-        Ok(result) => result,
-        Err(_) => None,
-    }
 }
 
 pub fn try_get_secret_key_from_env() -> Result<Option<SecretKey>, PersistError> {
