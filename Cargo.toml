@@ -1,6 +1,6 @@
 [package]
 name = "iroh-persist"
-description = "Library to persist Iroh node-ids"
+description = "Library to persist Iroh secret keys"
 version = "0.1.0"
 edition = "2024"
 authors = ["Jeroen van Maanen"]

@@ -112,8 +112,8 @@ pub async fn try_get_secret_key_from_option(
 pub async fn try_get_secret_key_from_option_ref(
     persist_at: Option<&PathBuf>,
 ) -> Result<SecretKey, PersistError> {
-    if let Some(node_path) = persist_at {
-        try_get_secret_key_from_ref(node_path).await
+    if let Some(key_location) = persist_at {
+        try_get_secret_key_from_ref(key_location).await
     } else {
         info!("Using ephemeral key");
         Ok(generate_key())
