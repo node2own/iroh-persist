@@ -45,7 +45,9 @@ my-app --persist args...
 Use `--persist-at <file>` instead of `--persist` if you need more than one
 secret key for the same app.
 
-To debug, invoke the app with:
+To get some messages from the app, invoke it with:
 ```rust
-RUST_LOG='debug' my-app --persist args...
+RUST_LOG='info' my-app --persist args...
 ```
+Replace `info` with `debug`, `warn`, or `error` to see either more or
+less messages. (See also [env_logger](https://docs.rs/env_logger/latest/env_logger/).)
