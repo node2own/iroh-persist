@@ -47,7 +47,7 @@ secret key for the same app.
 
 To get some messages from the app, invoke it with:
 ```rust
-RUST_LOG='info' my-app --persist args...
+RUST_LOG='iroh_persist=info' my-app --persist args...
 ```
 Replace `info` with `debug`, `warn`, or `error` to see either more or
 less messages. (See also [env_logger](https://docs.rs/env_logger/latest/env_logger/).)
