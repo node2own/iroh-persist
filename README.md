@@ -36,8 +36,8 @@ Then invoke this at least once:
 ```shell
 IROH_SECRET=<hex-key> my-app --persist args...
 ```
-Then `iroh-persist` will save the key on disk. After that, this invocation
-will suffice:
+Then `iroh-persist` will save the key on disk. After that, the following
+invocation will suffice:
 ```shell
 my-app --persist args...
 ```
