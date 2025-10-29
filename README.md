@@ -2,6 +2,8 @@
 
 Library to persist Iroh secret keys.
 
+## Usage pattern
+
 Build a command-line app with [clap](https://docs.rs/clap/latest/clap/) and
 declare a struct for common arguments like this:
 ```rust
@@ -31,6 +33,8 @@ let endpoint = Endpoint::builder().secret_key(secret_key).bind().await?;
 Without `.lenient()` the `.get().await` will not fallback to an ephemeral key
 and returns a `Result<SecretKey>` rather than a `SecretKey`.
 
+## Migrate from IROH_SECRET to iroh-persist
+
 If you used to invoke:
 ```shell
 IROH_SECRET=<hex-key> my-app args...
@@ -45,8 +49,12 @@ invocation will suffice:
 my-app --persist args...
 ```
 
+## Specify the key file
+
 Use `--persist-at <file>` instead of `--persist` if you need more than one
 secret key for the same app.
+
+## Logging
 
 To get some messages from the app, invoke it with:
 ```rust
