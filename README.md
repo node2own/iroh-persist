@@ -23,10 +23,13 @@ like so:
 let secret_key = iroh_persist::KeyRetriever::new("my-app")
     .persist(common.persist)
     .persist_at(common.persist_at.as_ref())
+    .lenient()
     .get()
     .await;
 let endpoint = Endpoint::builder().secret_key(secret_key).bind().await?;
 ```
+Without `.lenient()` the `.get().await` will not fallback to an ephemeral key
+and returns a `Result<SecretKey>` rather than a `SecretKey`.
 
 If you used to invoke:
 ```shell

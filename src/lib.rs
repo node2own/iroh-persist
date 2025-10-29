@@ -22,7 +22,7 @@ pub struct KeyRetriever {
     app_name: String,
 }
 
-pub struct FailFastKeyRetriever(KeyRetriever);
+pub struct LenientKeyRetriever(KeyRetriever);
 
 impl KeyRetriever {
     pub fn new<S: Into<String>>(app_name: S) -> Self {
@@ -43,17 +43,17 @@ impl KeyRetriever {
         }
         self
     }
-    pub fn fail_fast(self) -> FailFastKeyRetriever {
-        FailFastKeyRetriever(self)
+    pub fn lenient(self) -> LenientKeyRetriever {
+        LenientKeyRetriever(self)
     }
-    pub async fn get(self) -> SecretKey {
-        get_secret_key_from_option_ref(self.persist_at.as_ref()).await
+    pub async fn get(self) -> Result<SecretKey, PersistError> {
+        try_get_secret_key_from_option_ref(self.persist_at.as_ref()).await
     }
 }
 
-impl FailFastKeyRetriever {
-    pub async fn get(self) -> Result<SecretKey, PersistError> {
-        try_get_secret_key_from_option_ref(self.0.persist_at.as_ref()).await
+impl LenientKeyRetriever {
+    pub async fn get(self) -> SecretKey {
+        get_secret_key_from_option_ref(self.0.persist_at.as_ref()).await
     }
 }
 
