@@ -42,10 +42,10 @@ will suffice:
 my-app --persist args...
 ```
 
-Use `--persist-at <file>` instead of `--persist` if you need mote than one
+Use `--persist-at <file>` instead of `--persist` if you need more than one
 secret key for the same app.
 
 To debug, invoke the app with:
 ```rust
-RUST_LOG=debug my-app --persist args...
+RUST_LOG='debug' my-app --persist args...
 ```
