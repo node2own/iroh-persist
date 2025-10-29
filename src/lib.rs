@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     fmt::Debug,
     path::{Path, PathBuf},
     str::FromStr,
@@ -18,22 +17,44 @@ pub mod error;
 
 pub use crate::error::*;
 
-pub async fn get_secret_key_magic(
-    persist: bool,
-    app_name: Cow<'_, str>,
-    persist_at: Option<&PathBuf>,
-) -> SecretKey {
-    if persist || persist_at.is_some() {
-        let persist_location = persist_at
-            .map(PathBuf::to_owned)
-            .or_else(|| default_persist_at(app_name));
-        return get_secret_key_from_option(persist_location).await;
+pub struct KeyRetriever {
+    persist_at: Option<PathBuf>,
+    app_name: String,
+}
+
+pub struct FailFastKeyRetriever(KeyRetriever);
+
+impl KeyRetriever {
+    pub fn new<S: Into<String>>(app_name: S) -> Self {
+        KeyRetriever {
+            persist_at: None,
+            app_name: app_name.into(),
+        }
     }
-    if let Some(secret_key) = try_get_secret_key_from_env().ok().flatten() {
-        info!("Using ephemeral secret key from environment");
-        return secret_key;
+    pub fn persist(mut self, persist: bool) -> Self {
+        if persist && self.persist_at.is_none() {
+            self.persist_at = default_persist_at(&self.app_name)
+        }
+        self
     }
-    generate_key()
+    pub fn persist_at(mut self, persist_at: Option<&PathBuf>) -> Self {
+        if persist_at.is_some() {
+            self.persist_at = persist_at.map(PathBuf::to_owned);
+        }
+        self
+    }
+    pub fn fail_fast(self) -> FailFastKeyRetriever {
+        FailFastKeyRetriever(self)
+    }
+    pub async fn get(self) -> SecretKey {
+        get_secret_key_from_option_ref(self.persist_at.as_ref()).await
+    }
+}
+
+impl FailFastKeyRetriever {
+    pub async fn get(self) -> Result<SecretKey, PersistError> {
+        try_get_secret_key_from_option_ref(self.0.persist_at.as_ref()).await
+    }
 }
 
 pub fn try_get_secret_key_from_env() -> Result<Option<SecretKey>, PersistError> {
@@ -94,7 +115,7 @@ pub async fn try_get_secret_key_from_option_ref(
     if let Some(node_path) = persist_at {
         try_get_secret_key_from_ref(node_path).await
     } else {
-        warn!("No key path; falling back to ephemeral key");
+        info!("Using ephemeral key");
         Ok(generate_key())
     }
 }
