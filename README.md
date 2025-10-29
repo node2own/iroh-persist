@@ -7,10 +7,10 @@ declare a struct for common arguments like this:
 ```rust
 #[derive(Parser, Debug)]
 pub struct CommonArgs {
-    /// Use a persistent node key pair
+    /// Use a persistent secret key
     #[arg(long)]
     persist: bool,
-    /// Write and read the node keys at the given location
+    /// Write and read the secret key at the given location
     #[arg(long)]
     persist_at: Option<PathBuf>,
     /// More arguments...
