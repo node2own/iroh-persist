@@ -328,7 +328,7 @@ mod tests {
     async fn it_retrieves_a_key_from_a_given_location() -> Result<()> {
         let test_tmp_dir = TestTmpDir::create().await;
         let tmp_dir = test_tmp_dir.dir_str();
-        let location: PathBuf = format!("{tmp_dir}/test/iroh-secret-foo.pem").into();
+        let location = format!("{tmp_dir}/test/iroh-secret-foo.pem").into();
         let first_key = get_secret_key_from_ref(&location).await;
         let second_key = (KeyRetriever::new("foo").persist_at(Some(&location)).get()).await?;
         let third_key = get_secret_key(format!("{tmp_dir}/test/iroh-secret-bar.pem").into()).await;
