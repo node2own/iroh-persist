@@ -178,8 +178,8 @@ async fn read_key(key_path: &PathBuf) -> Result<Option<SecretKey>, PersistError>
 
 async fn write_key(key_path: &Path, secret_key: &SecretKey) -> Result<(), PersistError> {
     let ckey = ssh_key::private::Ed25519Keypair {
-        public: secret_key.public().as_verifying_key().into(),
-        private: secret_key.as_signing_key().into(),
+        public: secret_key.public().public().into(),
+        private: secret_key.secret().into(),
     };
     let ser_key = ssh_key::private::PrivateKey::from(ckey)
         .to_openssh(ssh_key::LineEnding::default())
