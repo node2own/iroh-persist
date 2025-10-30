@@ -71,10 +71,9 @@ pub async fn get_secret_key(persist_at: PathBuf) -> SecretKey {
 }
 
 pub async fn get_secret_key_from_ref(persist_at: &PathBuf) -> SecretKey {
-    match try_get_secret_key_from_ref(persist_at).await {
-        Ok(secret_key) => secret_key,
-        Err(error) => handle_error(error, persist_at),
-    }
+    try_get_secret_key_from_ref(persist_at)
+        .await
+        .unwrap_or_else(|error| handle_error(error, persist_at))
 }
 
 pub async fn get_secret_key_from_option(persist_at: Option<PathBuf>) -> SecretKey {
@@ -82,10 +81,9 @@ pub async fn get_secret_key_from_option(persist_at: Option<PathBuf>) -> SecretKe
 }
 
 pub async fn get_secret_key_from_option_ref(persist_at: Option<&PathBuf>) -> SecretKey {
-    match try_get_secret_key_from_option_ref(persist_at).await {
-        Ok(secret_key) => secret_key,
-        Err(error) => handle_error(error, &persist_at),
-    }
+    try_get_secret_key_from_option_ref(persist_at)
+        .await
+        .unwrap_or_else(|error| handle_error(error, &persist_at))
 }
 
 fn handle_error<P: Debug>(error: PersistError, persist_at: &P) -> SecretKey {
