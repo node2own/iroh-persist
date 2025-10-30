@@ -310,4 +310,30 @@ mod tests {
         let second_key = get_secret_key_from_ref(&file_path).await;
         assert_ne!(first_key.to_bytes(), second_key.to_bytes());
     }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn it_retrieves_a_key_from_a_default_location() {
+        let test_tmp_dir = TestTmpDir::create().await;
+        let tmp_dir = test_tmp_dir.dir_str();
+        let first_key = get_secret_key_from_option(default_persist_at("foo")).await;
+        let second_key = KeyRetriever::new("foo").persist(true).lenient().get().await;
+        let third_key = get_secret_key(format!("{tmp_dir}/test/iroh-secret-bar.pem").into()).await;
+        assert_eq!(first_key.to_bytes(), second_key.to_bytes());
+        assert_ne!(first_key.to_bytes(), third_key.to_bytes());
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn it_retrieves_a_key_from_a_given_location() -> Result<()> {
+        let test_tmp_dir = TestTmpDir::create().await;
+        let tmp_dir = test_tmp_dir.dir_str();
+        let location: PathBuf = "{tmp_dir}/test/iroh-secret-foo.pem".into();
+        let first_key = get_secret_key_from_ref(&location).await;
+        let second_key = (KeyRetriever::new("foo").persist_at(Some(&location)).get()).await?;
+        let third_key = get_secret_key(format!("{tmp_dir}/test/iroh-secret-bar.pem").into()).await;
+        assert_eq!(first_key.to_bytes(), second_key.to_bytes());
+        assert_ne!(first_key.to_bytes(), third_key.to_bytes());
+        Ok(())
+    }
 }
