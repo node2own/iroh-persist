@@ -18,8 +18,13 @@ pub mod error;
 pub use crate::error::*;
 
 pub struct KeyRetriever {
-    persist_at: Option<PathBuf>,
-    app_name: String,
+    location: KeyLocation,
+    env_var: String,
+}
+
+enum KeyLocation {
+    Ephemeral { app_name: String },
+    PersistAt(PathBuf),
 }
 
 pub struct LenientKeyRetriever(KeyRetriever);
@@ -27,43 +32,94 @@ pub struct LenientKeyRetriever(KeyRetriever);
 impl KeyRetriever {
     pub fn new<S: Into<String>>(app_name: S) -> Self {
         KeyRetriever {
-            persist_at: None,
-            app_name: app_name.into(),
+            location: KeyLocation::Ephemeral {
+                app_name: app_name.into(),
+            },
+            env_var: "IROH_SECRET".to_string(),
         }
     }
+
+    pub fn env_var<S: Into<String>>(mut self, env_var: S) -> Self {
+        self.env_var = env_var.into();
+        self
+    }
+
     pub fn persist(mut self, persist: bool) -> Self {
-        if persist && self.persist_at.is_none() {
-            self.persist_at = default_persist_at(&self.app_name)
+        if !persist {
+            return self;
+        }
+        if let KeyLocation::Ephemeral { app_name, .. } = &self.location {
+            if let Some(persist_at) = default_persist_at(app_name) {
+                self.location = KeyLocation::PersistAt(persist_at);
+            }
         }
         self
     }
-    pub fn persist_at(mut self, persist_at: Option<&PathBuf>) -> Self {
-        if persist_at.is_some() {
-            self.persist_at = persist_at.map(PathBuf::to_owned);
+
+    pub fn persist_at(self, persist_at: Option<&PathBuf>) -> Self {
+        if let Some(location) = persist_at {
+            self.persist_at_some(location.to_owned())
+        } else {
+            self
         }
+    }
+
+    pub fn persist_at_some(mut self, persist_at: PathBuf) -> Self {
+        self.location = KeyLocation::PersistAt(persist_at);
         self
     }
+
     pub fn lenient(self) -> LenientKeyRetriever {
         LenientKeyRetriever(self)
     }
-    pub async fn get(self) -> Result<SecretKey, PersistError> {
-        try_get_secret_key_from_option_ref(self.persist_at.as_ref()).await
+
+    async fn get(&self) -> Result<SecretKey, PersistError> {
+        match &self.location {
+            KeyLocation::Ephemeral { .. } => {
+                Ok(self.get_secret_key_from_env()?.unwrap_or_else(generate_key))
+            }
+            KeyLocation::PersistAt(persist_at) => {
+                if let Some(result) = read_key(persist_at).await? {
+                    info!("Using secret key {persist_at:?}");
+                    return Ok(result);
+                };
+                if let Some(result) = self.get_secret_key_from_env()? {
+                    info!("Using secret key from environment");
+                    return Ok(result);
+                }
+
+                let key = generate_key();
+                write_key(persist_at, &key).await?;
+                Ok(key)
+            }
+        }
+    }
+
+    pub fn get_secret_key_from_env(&self) -> Result<Option<SecretKey>, PersistError> {
+        if let Ok(hex_secret) = std::env::var(&self.env_var) {
+            return iroh::SecretKey::from_str(&hex_secret)
+                .map(Option::Some)
+                .map_err(KeyParsingError::into);
+        }
+        Ok(None)
+    }
+
+    fn location(&self) -> Option<&PathBuf> {
+        None
     }
 }
 
 impl LenientKeyRetriever {
-    pub async fn get(self) -> SecretKey {
-        get_secret_key_from_option_ref(self.0.persist_at.as_ref()).await
+    pub async fn get(&self) -> SecretKey {
+        self.0
+            .get()
+            .await
+            .unwrap_or_else(|error| handle_error(error, &self.0.location()))
     }
 }
 
 pub fn try_get_secret_key_from_env() -> Result<Option<SecretKey>, PersistError> {
-    if let Ok(hex_secret) = std::env::var("IROH_SECRET") {
-        return iroh::SecretKey::from_str(&hex_secret)
-            .map(Option::Some)
-            .map_err(KeyParsingError::into);
-    }
-    Ok(None)
+    KeyRetriever::new("?").get_secret_key_from_env()
 }
 
 pub async fn get_secret_key(persist_at: PathBuf) -> SecretKey {
@@ -123,18 +179,10 @@ pub async fn try_get_secret_key(persist_at: PathBuf) -> Result<SecretKey, Persis
 }
 
 pub async fn try_get_secret_key_from_ref(persist_at: &PathBuf) -> Result<SecretKey, PersistError> {
-    if let Some(result) = read_key(persist_at).await? {
-        info!("Using secret key {persist_at:?}");
-        return Ok(result);
-    };
-    if let Some(result) = try_get_secret_key_from_env()? {
-        info!("Using secret key from environment");
-        return Ok(result);
-    }
-
-    let key = generate_key();
-    write_key(persist_at, &key).await?;
-    Ok(key)
+    KeyRetriever::new("?")
+        .persist_at_some(persist_at.to_owned())
+        .get()
+        .await
 }
 
 pub fn generate_key() -> SecretKey {
