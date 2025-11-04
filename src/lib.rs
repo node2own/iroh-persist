@@ -22,6 +22,7 @@ pub struct KeyRetriever {
     env_var: String,
 }
 
+#[derive(Debug)]
 enum KeyLocation {
     Ephemeral { app_name: String },
     PersistAt(PathBuf),
@@ -73,7 +74,7 @@ impl KeyRetriever {
         LenientKeyRetriever(self)
     }
 
-    async fn get(&self) -> Result<SecretKey, PersistError> {
+    pub async fn get(&self) -> Result<SecretKey, PersistError> {
         match &self.location {
             KeyLocation::Ephemeral { .. } => {
                 Ok(self.get_secret_key_from_env()?.unwrap_or_else(generate_key))
@@ -103,10 +104,6 @@ impl KeyRetriever {
         }
         Ok(None)
     }
-
-    fn location(&self) -> Option<&PathBuf> {
-        None
-    }
 }
 
 impl LenientKeyRetriever {
@@ -114,7 +111,7 @@ impl LenientKeyRetriever {
         self.0
             .get()
             .await
-            .unwrap_or_else(|error| handle_error(error, &self.0.location()))
+            .unwrap_or_else(|error| handle_error(error, &self.0.location))
     }
 }
 
