@@ -1,3 +1,31 @@
+//! Library to persist Iroh secret keys.
+//!
+//! Typical usage:
+//!
+//! ```no_run
+//! # use n0_error::{StackResultExt, StdResultExt};
+//! # async fn wrapper() -> n0_error::Result<()> {
+//! let secret_key = iroh_persist::KeyRetriever::new("my-app")
+//!     .persist(common.persist)
+//!     .persist_at(common.persist_at.as_ref())
+//!     .lenient()
+//!     .get()
+//!     .await;
+//! let endpoint = Endpoint::builder().secret_key(secret_key).bind().await?;
+//! # Ok(())
+//! # }
+//! ```
+//! where `common.persist` is a `bool` and `common.persist_at` is an `Option<PatBuf>`
+//!
+//! Functions `persist` and `persist_at` are designed to work well with
+//! struct-fields that are filled by [clap](https://docs.rs/clap/latest/clap/).
+//! Function `persist` does nothing when its argument is `false`.
+//! Function `persist_at` does nothing when its argument is `None`.
+//!
+//! After applying `lenient()`, the `get()`-function becomes infallible and
+//! falls back to logging the error and returning an ephemeral key instead of
+//! returning the error.
+
 use std::{
     fmt::Debug,
     path::{Path, PathBuf},
