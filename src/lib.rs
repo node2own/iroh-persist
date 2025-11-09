@@ -8,9 +8,8 @@
 //! let secret_key = iroh_persist::KeyRetriever::new("my-app")
 //!     .persist(common.persist)
 //!     .persist_at(common.persist_at.as_ref())
-//!     .lenient()
 //!     .get()
-//!     .await;
+//!     .await?;
 //! let endpoint = Endpoint::builder().secret_key(secret_key).bind().await?;
 //! # Ok(())
 //! # }
