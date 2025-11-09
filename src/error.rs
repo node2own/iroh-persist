@@ -2,9 +2,9 @@
 use std::path::PathBuf;
 
 use iroh::{KeyParsingError, SecretKey};
-use n0_error::{Result, StackResultExt, e, ensure, stack_error};
+use n0_error::{e, stack_error};
 
-#[stack_error(derive, add_meta, from_sources)]
+#[stack_error(derive, add_meta)]
 #[non_exhaustive]
 pub enum PersistError {
     KeyWriteError {
@@ -28,7 +28,7 @@ pub fn writing_file(file: PathBuf) -> impl FnOnce(std::io::Error) -> KeyWriteErr
     |e| e!(KeyWriteErrorSource::WriteFileError { source: e, file })
 }
 
-#[stack_error(derive, add_meta, from_sources)]
+#[stack_error(derive, add_meta)]
 #[non_exhaustive]
 pub enum KeyReadErrorSource {
     #[error(transparent)]
@@ -43,6 +43,7 @@ pub enum KeyReadErrorSource {
 
     #[error(transparent)]
     SshParsingError {
+        #[error(std_err)]
         source: ssh_key::Error,
     },
 
@@ -64,7 +65,19 @@ impl From<KeyParsingError> for PersistError {
     }
 }
 
-#[stack_error(derive, add_meta, from_sources)]
+impl From<ssh_key::Error> for KeyReadErrorSource {
+    fn from(source: ssh_key::Error) -> Self {
+        e!(KeyReadErrorSource::SshParsingError { source })
+    }
+}
+
+impl From<KeyReadErrorSource> for PersistError {
+    fn from(source: KeyReadErrorSource) -> Self {
+        e!(PersistError::KeyReadError { source })
+    }
+}
+
+#[stack_error(derive, add_meta)]
 #[non_exhaustive]
 pub enum KeyWriteErrorSource {
     #[error(transparent)]
@@ -76,5 +89,14 @@ pub enum KeyWriteErrorSource {
     },
 
     #[error(transparent)]
-    KeyEncodeError { source: ssh_key::Error },
+    KeyEncodeError {
+        #[error(std_err)]
+        source: ssh_key::Error,
+    },
+}
+
+impl From<ssh_key::Error> for KeyWriteErrorSource {
+    fn from(source: ssh_key::Error) -> Self {
+        e!(KeyWriteErrorSource::KeyEncodeError { source })
+    }
 }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use iroh::{KeyParsingError, SecretKey};
-use n0_error::Result;
+use n0_error::{Result, e};
 use ssh_key::Algorithm;
 use tokio::{
     fs::{self, OpenOptions},
@@ -141,11 +141,11 @@ pub async fn get_secret_key_from_option_ref(persist_at: Option<&PathBuf>) -> Sec
 
 fn handle_error<P: Debug>(error: PersistError, persist_at: &P) -> SecretKey {
     let secret_key = match error {
-        PersistError::KeyReadError { source } => {
+        PersistError::KeyReadError { source, .. } => {
             error!("Error reading persisted {persist_at:?} key: [{source:?}]");
             generate_key()
         }
-        PersistError::KeyWriteError { source, key } => {
+        PersistError::KeyWriteError { source, key, .. } => {
             error!("Error writing persisted {persist_at:?} key: [{source:?}]");
             key
         }
@@ -214,7 +214,7 @@ async fn read_key(key_path: &PathBuf) -> Result<Option<SecretKey>, PersistError>
             .as_ref()
             .map(Algorithm::as_str)
             .map(ToString::to_string);
-        return Err(KeyReadErrorSource::InvalidKeyTypeError { algorithm }.into());
+        return Err(e!(KeyReadErrorSource::InvalidKeyTypeError { algorithm }).into());
     };
     let key = SecretKey::from_bytes(&kp.private.to_bytes());
     info!("Read key from {key_path:?}");
@@ -239,9 +239,11 @@ async fn write_key(key_path: &Path, secret_key: &SecretKey) -> Result<(), Persis
 }
 
 fn with_key(key: &SecretKey) -> impl FnOnce(KeyWriteErrorSource) -> PersistError {
-    |e| PersistError::KeyWriteError {
-        source: e,
-        key: key.to_owned(),
+    |e| {
+        e!(PersistError::KeyWriteError {
+            source: e,
+            key: key.to_owned(),
+        })
     }
 }
 
