@@ -5,7 +5,7 @@ use std::{
 };
 
 use iroh::{KeyParsingError, SecretKey};
-use n0_snafu::Result;
+use n0_error::Result;
 use ssh_key::Algorithm;
 use tokio::{
     fs::{self, OpenOptions},

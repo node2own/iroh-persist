@@ -2,9 +2,9 @@
 use std::path::PathBuf;
 
 use iroh::{KeyParsingError, SecretKey};
-use snafu::Snafu;
+use n0_error::{Result, StackResultExt, e, ensure, stack_error};
 
-#[derive(Debug, Snafu)]
+#[stack_error(derive, add_meta, from_sources)]
 #[non_exhaustive]
 pub enum PersistError {
     KeyWriteError {
@@ -12,24 +12,26 @@ pub enum PersistError {
         key: SecretKey,
     },
 
-    #[snafu(transparent)]
+    #[error(transparent)]
     KeyReadError { source: KeyReadErrorSource },
 }
 
 pub fn reading_file(file: PathBuf) -> impl FnOnce(std::io::Error) -> PersistError {
-    |e| PersistError::KeyReadError {
-        source: KeyReadErrorSource::ReadFileError { source: e, file },
+    |e| {
+        e!(PersistError::KeyReadError {
+            source: e!(KeyReadErrorSource::ReadFileError { source: e, file }),
+        })
     }
 }
 
 pub fn writing_file(file: PathBuf) -> impl FnOnce(std::io::Error) -> KeyWriteErrorSource {
-    |e| KeyWriteErrorSource::WriteFileError { source: e, file }
+    |e| e!(KeyWriteErrorSource::WriteFileError { source: e, file })
 }
 
-#[derive(Debug, Snafu)]
+#[stack_error(derive, add_meta, from_sources)]
 #[non_exhaustive]
 pub enum KeyReadErrorSource {
-    #[snafu(transparent)]
+    #[error(transparent)]
     IOError {
         source: std::io::Error,
     },
@@ -39,12 +41,12 @@ pub enum KeyReadErrorSource {
         file: PathBuf,
     },
 
-    #[snafu(transparent)]
+    #[error(transparent)]
     SshParsingError {
         source: ssh_key::Error,
     },
 
-    #[snafu(transparent)]
+    #[error(transparent)]
     IrohParsingError {
         source: iroh::KeyParsingError,
     },
@@ -56,16 +58,16 @@ pub enum KeyReadErrorSource {
 
 impl From<KeyParsingError> for PersistError {
     fn from(source: KeyParsingError) -> Self {
-        PersistError::KeyReadError {
-            source: KeyReadErrorSource::IrohParsingError { source },
-        }
+        e!(PersistError::KeyReadError {
+            source: e!(KeyReadErrorSource::IrohParsingError { source }),
+        })
     }
 }
 
-#[derive(Debug, Snafu)]
+#[stack_error(derive, add_meta, from_sources)]
 #[non_exhaustive]
 pub enum KeyWriteErrorSource {
-    #[snafu(transparent)]
+    #[error(transparent)]
     IOError { source: std::io::Error },
 
     WriteFileError {
@@ -73,6 +75,6 @@ pub enum KeyWriteErrorSource {
         file: PathBuf,
     },
 
-    #[snafu(transparent)]
+    #[error(transparent)]
     KeyEncodeError { source: ssh_key::Error },
 }
