@@ -31,8 +31,8 @@ use std::{
     str::FromStr,
 };
 
-use iroh::{KeyParsingError, SecretKey};
-use n0_error::{Result, e};
+use iroh::SecretKey;
+use n0_error::{Result, bail, e};
 use ssh_key::Algorithm;
 use tokio::{
     fs::{self, OpenOptions},
@@ -127,7 +127,12 @@ impl KeyRetriever {
         if let Ok(hex_secret) = std::env::var(&self.env_var) {
             return iroh::SecretKey::from_str(&hex_secret)
                 .map(Option::Some)
-                .map_err(KeyParsingError::into);
+                .map_err(|err| {
+                    e!(
+                        PersistError::KeyReadError,
+                        e!(KeyReadErrorSource::IrohParsingError, err)
+                    )
+                });
         }
         Ok(None)
     }
@@ -232,16 +237,23 @@ async fn read_key(key_path: &PathBuf) -> Result<Option<SecretKey>, PersistError>
     let keystr = tokio::fs::read_to_string(key_path)
         .await
         .map_err(reading_file(key_path.clone()))?;
-    let ser_key = ssh_key::private::PrivateKey::from_openssh(keystr)
-        .map_err(KeyReadErrorSource::from)
-        .map_err(PersistError::from)?;
+    let ser_key = ssh_key::private::PrivateKey::from_openssh(keystr).map_err(|err| {
+        e!(
+            PersistError::KeyReadError,
+            e!(KeyReadErrorSource::SshParsingError, err)
+        )
+    })?;
+
     let ssh_key::private::KeypairData::Ed25519(kp) = ser_key.key_data() else {
         let key_algorithm = ser_key.key_data().algorithm().ok();
         let algorithm = key_algorithm
             .as_ref()
             .map(Algorithm::as_str)
             .map(ToString::to_string);
-        return Err(e!(KeyReadErrorSource::InvalidKeyTypeError { algorithm }).into());
+        bail!(
+            PersistError::KeyReadError,
+            e!(KeyReadErrorSource::InvalidKeyTypeError { algorithm })
+        );
     };
     let key = SecretKey::from_bytes(&kp.private.to_bytes());
     info!("Read key from {key_path:?}");
@@ -255,23 +267,27 @@ async fn write_key(key_path: &Path, secret_key: &SecretKey) -> Result<(), Persis
     };
     let ser_key = ssh_key::private::PrivateKey::from(ckey)
         .to_openssh(ssh_key::LineEnding::default())
-        .map_err(KeyWriteErrorSource::from)
-        .map_err(with_key(&secret_key))?;
+        .map_err(|err| {
+            e!(
+                PersistError::KeyWriteError {
+                    key: secret_key.to_owned(),
+                },
+                e!(KeyWriteErrorSource::KeyEncodeError, err)
+            )
+        })?;
 
     create_secret_file(key_path, ser_key.as_str())
         .await
-        .map_err(with_key(secret_key))?;
+        .map_err(|err| {
+            e!(
+                PersistError::KeyWriteError {
+                    key: secret_key.to_owned(),
+                },
+                err
+            )
+        })?;
     info!("Wrote key to {key_path:?}");
     Ok(())
-}
-
-fn with_key(key: &SecretKey) -> impl FnOnce(KeyWriteErrorSource) -> PersistError {
-    |e| {
-        e!(PersistError::KeyWriteError {
-            source: e,
-            key: key.to_owned(),
-        })
-    }
 }
 
 async fn create_secret_file(file: &Path, content: &str) -> Result<(), KeyWriteErrorSource> {
