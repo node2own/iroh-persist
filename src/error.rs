@@ -1,7 +1,7 @@
 ///! Error structs for iroh-persist
 use std::path::PathBuf;
 
-use iroh::{KeyParsingError, SecretKey};
+use iroh::SecretKey;
 use n0_error::{e, stack_error};
 
 #[stack_error(derive, add_meta)]
@@ -28,7 +28,7 @@ pub fn writing_file(file: PathBuf) -> impl FnOnce(std::io::Error) -> KeyWriteErr
     |e| e!(KeyWriteErrorSource::WriteFileError { source: e, file })
 }
 
-#[stack_error(derive, add_meta)]
+#[stack_error(derive, add_meta, std_sources)]
 #[non_exhaustive]
 pub enum KeyReadErrorSource {
     #[error(transparent)]
@@ -57,26 +57,6 @@ pub enum KeyReadErrorSource {
     },
 }
 
-impl From<KeyParsingError> for PersistError {
-    fn from(source: KeyParsingError) -> Self {
-        e!(PersistError::KeyReadError {
-            source: e!(KeyReadErrorSource::IrohParsingError { source }),
-        })
-    }
-}
-
-impl From<ssh_key::Error> for KeyReadErrorSource {
-    fn from(source: ssh_key::Error) -> Self {
-        e!(KeyReadErrorSource::SshParsingError { source })
-    }
-}
-
-impl From<KeyReadErrorSource> for PersistError {
-    fn from(source: KeyReadErrorSource) -> Self {
-        e!(PersistError::KeyReadError { source })
-    }
-}
-
 #[stack_error(derive, add_meta)]
 #[non_exhaustive]
 pub enum KeyWriteErrorSource {
@@ -93,10 +73,4 @@ pub enum KeyWriteErrorSource {
         #[error(std_err)]
         source: ssh_key::Error,
     },
-}
-
-impl From<ssh_key::Error> for KeyWriteErrorSource {
-    fn from(source: ssh_key::Error) -> Self {
-        e!(KeyWriteErrorSource::KeyEncodeError { source })
-    }
 }
