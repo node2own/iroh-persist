@@ -3,18 +3,23 @@
 //! Typical usage:
 //!
 //! ```no_run
-//! # use n0_error::{StackResultExt, StdResultExt};
+//! # use std::path::PathBuf;
+//! # use iroh::Endpoint;
+//! # struct CommonArgs { persist: bool, persist_at: Option<PathBuf> }
 //! # async fn wrapper() -> n0_error::Result<()> {
+//! # let common = CommonArgs { persist: true, persist_at: None };
+//!
 //! let secret_key = iroh_persist::KeyRetriever::new("my-app")
 //!     .persist(common.persist)
 //!     .persist_at(common.persist_at.as_ref())
 //!     .get()
 //!     .await?;
 //! let endpoint = Endpoint::builder().secret_key(secret_key).bind().await?;
+//! # println!("{endpoint:?}");
 //! # Ok(())
 //! # }
 //! ```
-//! where `common.persist` is a `bool` and `common.persist_at` is an `Option<PatBuf>`
+//! where `common.persist` is a `bool` and `common.persist_at` is an `Option<PathBuf>`
 //!
 //! Functions `persist` and `persist_at` are designed to work well with
 //! struct-fields that are filled by [clap](https://docs.rs/clap/latest/clap/).
