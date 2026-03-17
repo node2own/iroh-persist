@@ -73,4 +73,10 @@ pub enum KeyWriteErrorSource {
         #[error(std_err)]
         source: ssh_key::Error,
     },
+
+    #[error(transparent)]
+    KeyTranscodeError {
+        #[error(std_err)]
+        source: ed25519_dalek::ed25519::Error,
+    },
 }

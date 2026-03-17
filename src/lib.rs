@@ -4,7 +4,7 @@
 //!
 //! ```no_run
 //! # use std::path::PathBuf;
-//! # use iroh::Endpoint;
+//! # use iroh::{Endpoint, endpoint::presets};
 //! # struct CommonArgs { persist: bool, persist_at: Option<PathBuf> }
 //! # async fn wrapper() -> n0_error::Result<()> {
 //! # let common = CommonArgs { persist: true, persist_at: None };
@@ -14,7 +14,7 @@
 //!     .persist_at(common.persist_at.as_ref())
 //!     .get()
 //!     .await?;
-//! let endpoint = Endpoint::builder().secret_key(secret_key).bind().await?;
+//! let endpoint = Endpoint::builder(presets::N0).secret_key(secret_key).bind().await?;
 //! # println!("{endpoint:?}");
 //! # Ok(())
 //! # }
@@ -36,6 +36,7 @@ use std::{
     str::FromStr,
 };
 
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use iroh::SecretKey;
 use n0_error::{Result, bail, e};
 use ssh_key::Algorithm;
@@ -267,8 +268,8 @@ async fn read_key(key_path: &PathBuf) -> Result<Option<SecretKey>, PersistError>
 
 async fn write_key(key_path: &Path, secret_key: &SecretKey) -> Result<(), PersistError> {
     let ckey = ssh_key::private::Ed25519Keypair {
-        public: secret_key.public().as_verifying_key().into(),
-        private: secret_key.as_signing_key().into(),
+        public: transcode_verifying_key(&secret_key)?.into(),
+        private: transcode_signing_key(&secret_key).into(),
     };
     let ser_key = ssh_key::private::PrivateKey::from(ckey)
         .to_openssh(ssh_key::LineEnding::default())
@@ -316,6 +317,22 @@ async fn create_secret_file(file: &Path, content: &str) -> Result<(), KeyWriteEr
         .await
         .map_err(writing_file(file.to_owned()))?;
     Ok(())
+}
+
+fn transcode_verifying_key(secret_key: &SecretKey) -> Result<VerifyingKey, PersistError> {
+    ed25519_dalek::VerifyingKey::from_bytes(secret_key.public().as_verifying_key().as_bytes())
+        .map_err(|err| {
+            e!(
+                PersistError::KeyWriteError {
+                    key: secret_key.to_owned(),
+                },
+                e!(KeyWriteErrorSource::KeyTranscodeError, err)
+            )
+        })
+}
+
+fn transcode_signing_key(secret_key: &SecretKey) -> SigningKey {
+    ed25519_dalek::SigningKey::from_bytes(secret_key.as_signing_key().as_bytes())
 }
 
 #[cfg(test)]
