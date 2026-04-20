@@ -14,7 +14,7 @@
 //!     .persist_at(common.persist_at.as_ref())
 //!     .get()
 //!     .await?;
-//! let endpoint = Endpoint::builder(presets::N0).secret_key(secret_key).bind().await?;
+//! let endpoint = Endpoint::builder(presets::Empty).secret_key(secret_key).bind().await?;
 //! # println!("{endpoint:?}");
 //! # Ok(())
 //! # }
@@ -221,7 +221,7 @@ pub async fn try_get_secret_key_from_ref(persist_at: &PathBuf) -> Result<SecretK
 }
 
 pub fn generate_key() -> SecretKey {
-    let result = SecretKey::generate(&mut rand::rng());
+    let result = SecretKey::generate();
     info!("Generated new key");
     result
 }
